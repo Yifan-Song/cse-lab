@@ -1,6 +1,6 @@
 #include "inode_manager.h"
 // disk layer -----------------------------------------
-
+int current_time;
 disk::disk()
 {
   bzero(blocks, sizeof(blocks));
@@ -109,7 +109,10 @@ inode_manager::alloc_inode(uint32_t type)
   inode_t new_inode;
   new_inode.type = type;
   new_inode.size = 0;
-  new_inode.ctime = 0;
+  new_inode.ctime = current_time;
+  new_inode.atime = current_time;
+  new_inode.mtime = current_time;
+  current_time ++;
   for(int i = 1;i < INODE_NUM+1;i++){
     if(get_inode(i) == NULL){
       put_inode(i,&new_inode);
@@ -134,6 +137,9 @@ inode_manager::free_inode(uint32_t inum)
   }
   printf("\tim: free_inode %d\n", inum);
   current_inode->type = 0;
+  current_inode->ctime = 0;
+  current_inode->atime = 0;
+  current_inode->mtime = 0;
   put_inode(inum, current_inode);
   return;
 }
@@ -178,7 +184,8 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
   printf("\tim: put_inode %d\n", inum);
   if (ino == NULL)
     return;
-
+  ino->ctime = current_time;
+  current_time ++;
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
   ino_disk = (struct inode*)buf + inum%IPB;
   *ino_disk = *ino;
@@ -357,7 +364,9 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
       }
     }
   }
-  current_inode->mtime = 0;
+  current_inode->mtime = current_time;
+  current_inode->atime = current_time;
+  current_time ++;
   current_inode->size = size;
   put_inode(inum, current_inode);
   return;
@@ -375,7 +384,7 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
   if(current_node == NULL){
     return;
   }
-  a.size = current_node->type;
+  a.size = current_node->size;
   a.type = current_node->type;
   a.atime = current_node->atime;
   a.mtime = current_node->mtime;

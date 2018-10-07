@@ -58,7 +58,8 @@ getattr(yfs_client::inum inum, struct stat &st)
         st.st_ctime = info.ctime;
         st.st_size = info.size;
         printf("   getattr -> %llu\n", info.size);
-    } else {
+    }
+    else if(yfs->isdir(inum)){
         yfs_client::dirinfo info;
         ret = yfs->getdir(inum, info);
         if(ret != yfs_client::OK)
@@ -69,6 +70,19 @@ getattr(yfs_client::inum inum, struct stat &st)
         st.st_mtime = info.mtime;
         st.st_ctime = info.ctime;
         printf("   getattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+    }
+    else{
+        yfs_client::syminfo info;
+        ret = yfs->getsymlink(inum, info);
+        if(ret != yfs_client::OK)
+            return ret;
+        st.st_mode = S_IFLNK | 0777;
+        st.st_nlink = 2;
+        st.st_atime = info.atime;
+        st.st_mtime = info.mtime;
+        st.st_ctime = info.ctime;
+        printf("   getattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+
     }
     return yfs_client::OK;
 }
@@ -264,6 +278,44 @@ fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
             fuse_reply_err(req, ENOENT);
         }
     }
+}
+
+void
+fuseserver_symlink(fuse_req_t req, const char *dir, fuse_ino_t parent, const char *name)
+{
+    struct fuse_entry_param e;
+    yfs_client::inum inum;
+    yfs_client::status ret;
+    // In yfs, timeouts are always set to 0.0, and generations are always set to 0
+    e.attr_timeout = 0.0;
+    e.entry_timeout = 0.0;
+    e.generation = 0;
+    if ((ret = yfs->symlink(parent, dir, name, inum)) == yfs_client::OK){
+        e.ino = inum;
+        getattr(inum, e.attr);
+        fuse_reply_entry(req, &e);
+    }
+    else{
+        fuse_reply_err(req, ret);
+    }
+}
+
+void
+fuseserver_readlink(fuse_req_t req, fuse_ino_t ino)
+{
+#if 1
+    int r;
+    std::string file_path;
+    // Change the above "#if 0" to "#if 1", and your code goes here
+    if ((r = yfs->readlink(ino, file_path)) == yfs_client::OK){
+        fuse_reply_readlink(req, file_path.c_str());
+    }
+    else{
+        fuse_reply_err(req, ENOENT);
+    }
+#else
+    fuse_reply_err(req, ENOSYS);
+#endif
 }
 
 void fuseserver_mknod( fuse_req_t req, fuse_ino_t parent, 
@@ -499,6 +551,8 @@ main(int argc, char *argv[])
     fuseserver_oper.setattr    = fuseserver_setattr;
     fuseserver_oper.unlink     = fuseserver_unlink;
     fuseserver_oper.mkdir      = fuseserver_mkdir;
+    fuseserver_oper.symlink     = fuseserver_symlink;
+    fuseserver_oper.readlink      = fuseserver_readlink;
     /** Your code here for Lab.
      * you may want to add
      * routines here to implement symbolic link,
